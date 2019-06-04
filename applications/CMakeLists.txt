@@ -1,5 +1,9 @@
 project(segyio-apps)
 
+if (NOT BUILD_BIN)
+    return ()
+endif ()
+
 if( NOT HAVE_GETOPT_H OR NOT HAVE_GETOPT_LONG )
     message(WARNING "Could not find getopt. Not building applications.")
     return ()
@@ -49,6 +53,14 @@ add_executable(segyio-crop segyio-crop.c)
 target_link_libraries(segyio-crop segyio apputils)
 target_compile_options(segyio-crop BEFORE
     PRIVATE $<$<CONFIG:Debug>:${warnings-c}> ${c99}
+)
+
+add_executable(flip-endianness flip-endianness.cpp)
+target_link_libraries(flip-endianness segyio)
+target_compile_options(flip-endianness BEFORE
+    PRIVATE
+        $<$<CONFIG:Debug>:${warnings-c}>
+        ${c++11}
 )
 
 install(TARGETS segyio-cath

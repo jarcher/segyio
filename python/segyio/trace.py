@@ -1,6 +1,7 @@
 import collections
 import contextlib
 import itertools
+import warnings
 import sys
 try: from future_builtins import zip
 except ImportError: pass
@@ -83,6 +84,11 @@ class Trace(Sequence):
     >>> tr = tr - 100
     >>> avg = numpy.average(tr)
 
+    Perform some seismic processing on a trace. E.g resample from 2ms spacing
+    to 4ms spacing (note there is no anti-alias filtering in this example):
+
+    >>> tr = scipy.signal.resample(tr, len(tr)/2)
+
     Double every trace value and write to disk. Since accessing a trace
     gives a numpy value, to write to the respective trace we need its index:
 
@@ -161,6 +167,17 @@ class Trace(Sequence):
             return self.filehandle.gettr(buf, i, 1, 1)
 
         except TypeError:
+            # we assume this is a generator. extract the indices-tuple right
+            # away, because if this is NOT a slice we want to fail with a type
+            # error right away. If this is done inside gen() then the call will
+            # succeed with a generator, which fails on first next() with an
+            # attribute error
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
             def gen():
                 # double-buffer the trace. when iterating over a range, we want
                 # to make sure the visible change happens as late as possible,
@@ -171,7 +188,7 @@ class Trace(Sequence):
                 x = np.zeros(self.shape, dtype=self.dtype)
                 y = np.zeros(self.shape, dtype=self.dtype)
 
-                for j in range(*i.indices(len(self))):
+                for j in range(*indices):
                     self.filehandle.gettr(x, j, 1, 1)
                     x, y = y, x
                     yield y
@@ -327,7 +344,11 @@ class RawTrace(Trace):
             buf = np.zeros(self.shape, dtype = self.dtype)
             return self.filehandle.gettr(buf, i, 1, 1)
         except TypeError:
-            indices = i.indices(len(self))
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
             start, _, step = indices
             length = len(range(*indices))
             buf = np.empty((length, self.shape), dtype = self.dtype)
@@ -485,11 +506,16 @@ class RefTrace(Trace):
             return x
 
         except TypeError:
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
             def gen():
                 x = np.zeros(self.shape, dtype = self.dtype)
-
                 try:
-                    for j in range(*i.indices(len(self))):
+                    for j in range(*indices):
                         x = self.fetch(j, x)
                         y = fingerprint(x)
 
@@ -571,6 +597,12 @@ class Header(Sequence):
             return Field.trace(traceno = i, segy = self.segy)
 
         except TypeError:
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
             def gen():
                 # double-buffer the header. when iterating over a range, we
                 # want to make sure the visible change happens as late as
@@ -580,7 +612,7 @@ class Header(Sequence):
                 # fully inspect and interact with the last good value.
                 x = Field.trace(None, self.segy)
                 buf = bytearray(x.buf)
-                for j in range(*i.indices(len(self))):
+                for j in range(*indices):
                     # skip re-invoking __getitem__, just update the buffer
                     # directly with fetch, and save some initialisation work
                     buf = x.fetch(buf, j)
@@ -826,25 +858,52 @@ class Text(Sequence):
             return self.filehandle.gettext(i)
 
         except TypeError:
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
             def gen():
-                for j in range(*i.indices(len(self))):
+                for j in range(*indices):
                     yield self.filehandle.gettext(j)
             return gen()
 
     def __setitem__(self, i, val):
         """text[i] = val
 
+        Write the ith text header of the file, starting at 0.
+        If val is instance of Text or iterable of Text,
+        value is set to be the first element of every Text
+
+        Parameters
+        ----------
+        i : int or slice
+        val : str, Text or iterable if i is slice
+
+        Examples
+        --------
         Write a new textual header:
 
         >>> f.text[0] = make_new_header()
+        >>> f.text[1:3] = ["new_header1", "new_header_2"]
 
-        Copy a tectual header:
+        Copy a textual header:
 
         >>> f.text[1] = g.text[0]
 
+        Write a textual header based on Text:
+
+        >>> f.text[1] = g.text
+        >>> assert f.text[1] == g.text[0]
+
+        >>> f.text[1:3] = [g1.text, g2.text]
+        >>> assert f.text[1] == g1.text[0]
+        >>> assert f.text[2] == g2.text[0]
+
         """
         if isinstance(val, Text):
-            self[index] = val[0]
+            self[i] = val[0]
             return
 
         try:
@@ -852,10 +911,19 @@ class Text(Sequence):
             self.filehandle.puttext(i, val)
 
         except TypeError:
-            for i, text in zip(range(*i.indices(len(self))), val):
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'trace indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
+            for i, text in zip(range(*indices), val):
+                if isinstance(text, Text):
+                    text = text[0]
                 self.filehandle.puttext(i, text)
+
 
     def __str__(self):
         msg = 'str(text) is deprecated, use explicit format instead'
-        warnings.warn(DeprecationWarning, msg)
+        warnings.warn(msg, DeprecationWarning)
         return '\n'.join(map(''.join, zip(*[iter(str(self[0]))] * 80)))

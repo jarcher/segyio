@@ -11,7 +11,7 @@ from .line import Line
 from .trace import Trace, Header, Attributes, Text
 from .field import Field
 
-from segyio.tracesortingformat import TraceSortingFormat
+from .tracesortingformat import TraceSortingFormat
 
 
 
@@ -23,7 +23,11 @@ class SegyFile(object):
 
     _unstructured_errmsg = "File opened in unstructured mode."
 
-    def __init__(self, fd, filename, mode, iline=189, xline=193):
+    def __init__(self, fd, filename, mode, iline=189,
+                                           xline=193,
+                                           endian='big',
+                                           ):
+
         self._filename = filename
         self._mode = mode
         self._il = iline
@@ -50,11 +54,18 @@ class SegyFile(object):
 
         try:
             self._dtype = np.dtype({
+               -1: np.float32,
                 1: np.float32,
                 2: np.int32,
                 3: np.int16,
                 5: np.float32,
+                6: np.float64,
                 8: np.int8,
+                9: np.int64,
+                10: np.uint32,
+                11: np.uint16,
+                12: np.uint64,
+                16: np.uint8,
             }[self._fmt])
         except KeyError:
             problem = 'Unknown trace value format {}'.format(self._fmt)
@@ -74,6 +85,7 @@ class SegyFile(object):
         self._xline = None
         self._gather = None
         self.depth = None
+        self.endian = endian
 
         super(SegyFile, self).__init__()
 
@@ -797,12 +809,22 @@ class SegyFile(object):
     @property
     def format(self):
         d = {
+           -2: "4-byte native big-endian float",
+           -1: "4-byte native little-endian float",
             1: "4-byte IBM float",
             2: "4-byte signed integer",
             3: "2-byte signed integer",
             4: "4-byte fixed point with gain",
             5: "4-byte IEEE float",
-            8: "1-byte signed char"
+            6: "8-byte IEEE float",
+            7: "3-byte signed integer",
+            8: "1-byte signed char",
+            9: "8-byte signed integer",
+            10: "4-byte unsigned integer",
+            11: "2-byte unsigned integer",
+            12: "8-byte unsigned integer",
+            15: "3-byte unsigned integer",
+            16: "1-byte unsigned char"
         }
 
         class fmt:
@@ -833,7 +855,121 @@ class SegyFile(object):
 
         return '+' not in self._mode
 
-class spec:
+
+    def interpret(self, ilines, xlines, offsets=None, sorting=TraceSortingFormat.INLINE_SORTING):
+
+        """ (Re-)interpret structure on top of a file
+
+        (Re-)interpret the structure of the file given the new sorting, ilines,
+        xlines and offset indices. Note that file itself is not changed in any
+        way, it is only segyio's interpretation of the file that changes. It's
+        a way of telling segyio that a file is laid out in a particular way,
+        even though the header fields say otherwise.
+
+        `interpret` expect that the ilines-, xlines- and offsets-indices are
+        unique. It also expect the dimensions of ilines, xlines and offset to
+        match the tracecount.
+
+        Parameters
+        ----------
+        f : SegyFile
+        ilines : array_like
+            ilines indices in new structure
+        xlines : array_like
+            xlines indices in new structure
+        offsets : array_like
+            offset indices in new structure
+        sorting : int, string or TraceSortingFormat
+            Sorting in new structure
+
+        Notes
+        -----
+
+        .. versionadded:: 1.8
+
+        Examples
+        --------
+        (Re)interpret the structure of the file:
+
+        >>> ilines = [10, 11, 12, 13]
+        >>> xlines = [20, 21, 22, 23, 24]
+        >>> with segyio.open(file, ignore_geometry=True) as f:
+        ... f.interpret(ilines, xlines)
+        """
+
+        valid_sortings = {
+            1           : TraceSortingFormat.CROSSLINE_SORTING,
+            2           : TraceSortingFormat.INLINE_SORTING,
+            'iline'     : TraceSortingFormat.INLINE_SORTING,
+            'inline'    : TraceSortingFormat.INLINE_SORTING,
+            'xl'        : TraceSortingFormat.CROSSLINE_SORTING,
+            'crossline' : TraceSortingFormat.CROSSLINE_SORTING,
+            TraceSortingFormat.INLINE_SORTING    : TraceSortingFormat.INLINE_SORTING,
+            TraceSortingFormat.CROSSLINE_SORTING : TraceSortingFormat.CROSSLINE_SORTING,
+        }
+
+        if sorting not in valid_sortings:
+            error = "Invalid sorting"
+            solution = "valid sorting options are: {}".format(valid_sortings.keys())
+            raise ValueError('{}, {}'.format(error, solution))
+
+        if offsets is None:
+            offsets = np.arange(1)
+
+        ilines  = np.copy(np.asarray(ilines,  dtype=np.intc))
+        xlines  = np.copy(np.asarray(xlines,  dtype=np.intc))
+        offsets = np.copy(np.asarray(offsets, dtype=np.intc))
+
+        if np.unique(ilines).size != ilines.size:
+            error = "Inlines inconsistent"
+            solution = "expect all inlines to be unique"
+            raise ValueError("{}, {}".format(error, solution))
+
+        if np.unique(xlines).size != xlines.size:
+            error = "Crosslines inconsistent"
+            solution = "expect all crosslines to be unique"
+            raise ValueError("{}, {}".format(error, solution))
+
+        if np.unique(offsets).size != offsets.size:
+            error = "Offsets inconsistent"
+            solution = "expect all offsets to be unique"
+            raise ValueError("{}, {}".format(error, solution))
+
+        if ilines.size * xlines.size * offsets.size != self.tracecount:
+            error = ("Invalid dimensions, ilines ({}) * xlines ({}) * offsets "
+                     "({}) should match the number of traces ({})").format(ilines.size,
+                                                                           xlines.size,
+                                                                           offsets.size,
+                                                                           self.tracecount)
+            raise ValueError(error)
+
+        from . import _segyio
+
+        line_metrics = _segyio.line_metrics(sorting,
+                                            self.tracecount,
+                                            ilines.size,
+                                            xlines.size,
+                                            offsets.size)
+
+        self._iline_length = line_metrics['iline_length']
+        self._iline_stride = line_metrics['iline_stride']
+
+        self._xline_length = line_metrics['xline_length']
+        self._xline_stride = line_metrics['xline_stride']
+
+        self._sorting = sorting
+        self._offsets = offsets
+        self._ilines = ilines
+        self._xlines = xlines
+
+        return self
+
+    def group(self, word):
+        from .gather import Groups
+        return Groups(self.trace, self.header, word)
+
+
+class spec(object):
     def __init__(self):
         self.iline = 189
         self.ilines = None
@@ -844,3 +980,4 @@ class spec:
         self.ext_headers = 0
         self.format = None
         self.sorting = None
+        self.endian = 'big'

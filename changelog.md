@@ -1,3 +1,62 @@
+# 1.8.6
+* Fixed a bug where negative short header words on gcc were read wrong
+
+# 1.8.5
+* segyio now reads short attributes from little-endian files correctly
+
+# 1.8.4
+* The from_array function has been refactored, and speed is improved
+* create works for non-4-byte numeric formats
+* More numerical formats are accepted: 8-byte/64 bit double-precision IEEE
+  float, 1, 2, and 4-byte signed and unsigned integers
+* segyio no longer crashes on key misses in f.gather[int, :]
+* The intended TypeError is raised when traces are accessed with None, instead
+  of a misleading (and wrong) AttributeError
+* sample-interval has gotten some new tests
+* Minor behavorial improvements to C++ test-config
+* Some stack-related bug fixes in the test suite
+* The readme has seen some minor updates
+
+# 1.8.3
+* Check endianness variable properly
+
+# 1.8.2
+* Pass HOST_BIG_ENDIAN as preprocessor directive, not compiler option
+
+# 1.8.1
+* Fixed a docstring formatting issue
+* Fixed a race condition in test suite
+
+# 1.8.0
+* segyio has learned the seismic unix file format, and can read and write SU
+  files. This feature is found in the segyio.su module
+* segyio supports least-significant-byte (LSB/little-endian) first formatted
+  files
+* Fixed a bug that caused writing headers in non-linear mode very slow,
+  and wrong under some conditions
+* segyio also considers files with descending line/offset numbers sorted, not
+  just ascending
+* The python file handle has learned the interpret method, which allows
+  specifying structure directly, rather than inferring it from file metadata.
+  This is particularly useful for files with structure, but broken headers
+* A new family of from_array functions are added to the tools module,
+  intended for quick-and-easy storing a 2/3/4D volume on disk
+* Sorting defaults to inline in segyio.create if nothing is specified
+* Text.__setitem__ used a wrong variable and didn't really work, but is now
+  fixed
+* Internal imports are tidied up
+* The test suite in both Python and C++ have seen some minor improvements
+* An experimental C++ interface is available for source builds, but is not
+  considered stable - internals and interface can change with no prior notice.
+  The experimental interface is enabled when segyio is built with
+  -DEXPERIMENTAL=ON
+
+# 1.7.1
+* Fixed an issue where writing traces on memory-mapped files was a no-op
+* Depth slices dimensions are always in fast-by-slow
+* catb/catr has some new output formats
+* Some docs entries updated and fixed
+
 # 1.7.0
 * segyio has learned to open non-ascii file paths on Windows
 * Fixed an issue where segyio-catr would sometimes print the same trace twice

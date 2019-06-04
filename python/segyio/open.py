@@ -11,28 +11,12 @@ def infer_geometry(f, metrics, iline, xline, strict):
         offset_count = cube_metrics['offset_count']
         metrics.update(cube_metrics)
 
-        line_metrics = segyio._segyio.line_metrics(f.sorting,
-                                                   f.tracecount,
-                                                   iline_count,
-                                                   xline_count,
-                                                   offset_count)
+        ilines  = numpy.zeros(iline_count,  dtype=numpy.intc)
+        xlines  = numpy.zeros(xline_count,  dtype=numpy.intc)
+        offsets = numpy.zeros(offset_count, dtype=numpy.intc)
 
-        f._iline_length = line_metrics['iline_length']
-        f._iline_stride = line_metrics['iline_stride']
-
-        f._xline_length = line_metrics['xline_length']
-        f._xline_stride = line_metrics['xline_stride']
-
-        f._ilines  = numpy.zeros(iline_count,  dtype = numpy.intc)
-        f._xlines  = numpy.zeros(xline_count,  dtype = numpy.intc)
-        f._offsets = numpy.zeros(offset_count, dtype = numpy.intc)
-        f.xfd.indices(metrics, f.ilines, f.xlines, f.offsets)
-
-        if numpy.unique(f.ilines).size != f.ilines.size:
-            raise ValueError( "Inlines inconsistent - expect all inlines to be unique")
-
-        if numpy.unique(f.xlines).size != f.xlines.size:
-            raise ValueError( "Crosslines inconsistent - expect all crosslines to be unique")
+        f.xfd.indices(metrics, ilines, xlines, offsets)
+        f.interpret(ilines, xlines, offsets, f._sorting)
 
     except:
         if not strict:
@@ -45,10 +29,12 @@ def infer_geometry(f, metrics, iline, xline, strict):
 
     return f
 
+
 def open(filename, mode="r", iline = 189,
                              xline = 193,
                              strict = True,
-                             ignore_geometry = False):
+                             ignore_geometry = False,
+                             endian = 'big'):
     """Open a segy file.
 
     Opens a segy file and tries to figure out its sorting, inline numbers,
@@ -101,6 +87,9 @@ def open(filename, mode="r", iline = 189,
         Opt out on building geometry information, useful for e.g. shot
         organised files. Defaults to False.
 
+    endian : {'big', 'msb', 'little', 'lsb'}
+        File endianness, big/msb (default) or little/lsb
+
     Returns
     -------
 
@@ -117,6 +106,9 @@ def open(filename, mode="r", iline = 189,
     -----
 
     .. versionadded:: 1.1
+
+    .. versionchanged:: 1.8
+        endian argument
 
     When a file is opened non-strict, only raw traces access is allowed, and
     using modes such as ``iline`` raise an error.
@@ -137,12 +129,15 @@ def open(filename, mode="r", iline = 189,
     >>> with segyio.open(path, "r+") as f:
     ...     f.trace = np.arange(100)
 
-
     Open two files at once:
 
-    >>> with segyio.open(path) as src, segyio.open(path, "r+") as dst:
+    >>> with segyio.open(src_path) as src, segyio.open(dst_path, "r+") as dst:
     ...     dst.trace = src.trace # copy all traces from src to dst
 
+    Open a file little-endian file:
+
+    >>> with segyio.open(path, endian = 'little') as f:
+    ...     f.trace[0]
 
     """
 
@@ -151,8 +146,20 @@ def open(filename, mode="r", iline = 189,
         solution = 'use r+ to open in read-write'
         raise ValueError(', '.join((problem, solution)))
 
+    endians = {
+        'little': 256, # (1 << 8)
+        'lsb': 256,
+        'big': 0,
+        'msb': 0,
+    }
+
+    if endian not in endians:
+        problem = 'unknown endianness {}, expected one of: '
+        opts = ' '.join(endians.keys())
+        raise ValueError(problem.format(endian) + opts)
+
     from . import _segyio
-    fd = _segyio.segyiofd(str(filename), mode)
+    fd = _segyio.segyiofd(str(filename), mode, endians[endian])
     fd.segyopen()
     metrics = fd.metrics()
 
@@ -161,6 +168,7 @@ def open(filename, mode="r", iline = 189,
             mode = mode,
             iline = iline,
             xline = xline,
+            endian = endian,
     )
 
     try:

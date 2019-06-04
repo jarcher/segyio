@@ -58,6 +58,11 @@ PyObject* ValueError( const char* msg ) {
     return NULL;
 }
 
+template< typename T1 >
+PyObject* ValueError( const char* msg, T1 t1 ) {
+    return PyErr_Format( PyExc_ValueError, msg, t1 );
+}
+
 template< typename T1, typename T2 >
 PyObject* ValueError( const char* msg, T1 t1, T2 t2 ) {
     return PyErr_Format( PyExc_ValueError, msg, t1, t2 );
@@ -222,8 +227,9 @@ namespace fd {
 int init( segyiofd* self, PyObject* args, PyObject* kwargs ) {
     char* filename = NULL;
     char* mode = NULL;
+    int endian = 0;
 
-    if( !PyArg_ParseTuple( args, "ss", &filename, &mode ) )
+    if( !PyArg_ParseTuple( args, "ssi", &filename, &mode, &endian ) )
         return -1;
 
     if( std::strlen( mode ) == 0 ) {
@@ -250,6 +256,23 @@ int init( segyiofd* self, PyObject* args, PyObject* kwargs ) {
 
     if( !fd ) {
         IOErrno();
+        return -1;
+    }
+
+    switch( endian ) {
+        case 0:
+        case SEGY_LSB:
+        case SEGY_MSB:
+            break;
+
+        default:
+            ValueError( "internal: unexpected endianness, was %d", endian );
+            return -1;
+    }
+
+    int err = segy_set_format( fd, endian );
+    if( err ) {
+        ValueError( "internal: error setting endianness, was %d", endian );
         return -1;
     }
 
@@ -291,10 +314,16 @@ PyObject* segyopen( segyiofd* self ) {
     switch( format ) {
         case SEGY_IBM_FLOAT_4_BYTE:             elemsize = 4; break;
         case SEGY_SIGNED_INTEGER_4_BYTE:        elemsize = 4; break;
+        case SEGY_SIGNED_INTEGER_8_BYTE:        elemsize = 8; break;
         case SEGY_SIGNED_SHORT_2_BYTE:          elemsize = 2; break;
         case SEGY_FIXED_POINT_WITH_GAIN_4_BYTE: elemsize = 4; break;
         case SEGY_IEEE_FLOAT_4_BYTE:            elemsize = 4; break;
+        case SEGY_IEEE_FLOAT_8_BYTE:            elemsize = 8; break;
         case SEGY_SIGNED_CHAR_1_BYTE:           elemsize = 1; break;
+        case SEGY_UNSIGNED_CHAR_1_BYTE:         elemsize = 1; break;
+        case SEGY_UNSIGNED_INTEGER_4_BYTE:      elemsize = 4; break;
+        case SEGY_UNSIGNED_SHORT_2_BYTE:        elemsize = 2; break;
+        case SEGY_UNSIGNED_INTEGER_8_BYTE:      elemsize = 8; break;
 
         case SEGY_NOT_IN_USE_1:
         case SEGY_NOT_IN_USE_2:
@@ -379,28 +408,50 @@ PyObject* segycreate( segyiofd* self, PyObject* args, PyObject* kwargs ) {
         case SEGY_SIGNED_SHORT_2_BYTE:
         case SEGY_FIXED_POINT_WITH_GAIN_4_BYTE:
         case SEGY_IEEE_FLOAT_4_BYTE:
+        case SEGY_IEEE_FLOAT_8_BYTE:
+        case SEGY_SIGNED_CHAR_3_BYTE:
         case SEGY_SIGNED_CHAR_1_BYTE:
+        case SEGY_SIGNED_INTEGER_8_BYTE:
+        case SEGY_UNSIGNED_INTEGER_4_BYTE:
+        case SEGY_UNSIGNED_SHORT_2_BYTE:
+        case SEGY_UNSIGNED_INTEGER_8_BYTE:
+        case SEGY_UNSIGNED_INTEGER_3_BYTE:
+        case SEGY_UNSIGNED_CHAR_1_BYTE:
             break;
 
         default:
             return ValueError( "unknown format identifier" );
     }
 
-
+    segy_set_format(fp, format);
     int elemsize = 4;
     switch( format ) {
-        case SEGY_IBM_FLOAT_4_BYTE:
+        case SEGY_SIGNED_INTEGER_8_BYTE:
+        case SEGY_IEEE_FLOAT_8_BYTE:
+        case SEGY_UNSIGNED_INTEGER_8_BYTE:
+            elemsize = 8;
+            break;
+
+         case SEGY_IBM_FLOAT_4_BYTE:
         case SEGY_SIGNED_INTEGER_4_BYTE:
         case SEGY_FIXED_POINT_WITH_GAIN_4_BYTE:
         case SEGY_IEEE_FLOAT_4_BYTE:
+        case SEGY_UNSIGNED_INTEGER_4_BYTE:
             elemsize = 4;
             break;
 
+        case SEGY_SIGNED_CHAR_3_BYTE:
+        case SEGY_UNSIGNED_INTEGER_3_BYTE:
+            elemsize = 3;
+            break;
+
         case SEGY_SIGNED_SHORT_2_BYTE:
+        case SEGY_UNSIGNED_SHORT_2_BYTE:
             elemsize = 2;
             break;
 
         case SEGY_SIGNED_CHAR_1_BYTE:
+        case SEGY_UNSIGNED_CHAR_1_BYTE:
             elemsize = 1;
             break;
 
@@ -415,6 +466,63 @@ PyObject* segycreate( segyiofd* self, PyObject* args, PyObject* kwargs ) {
     self->format = format;
     self->elemsize = elemsize;
     self->samplecount = samples;
+    self->tracecount = tracecount;
+
+    Py_INCREF( self );
+    return (PyObject*) self;
+}
+
+PyObject* suopen( segyiofd* self, PyObject* args ) {
+    segy_file* fp = self->fd;
+    if( !fp ) return NULL;
+
+    if( !PyArg_ParseTuple( args, "" ) )
+        return NULL;
+
+    int err = segy_set_format( fp, SEGY_IEEE_FLOAT_4_BYTE );
+
+    if( err )
+        return RuntimeError( "internal: unable to set type to IEEE float " );
+
+    char header[ SEGY_TRACE_HEADER_SIZE ] = {};
+
+    err = segy_traceheader( fp, 0, header, 0, 0 );
+    if( err )
+        return IOError( "unable to read first trace header in SU file" );
+
+    int32_t f;
+    segy_get_field( header, SEGY_TR_SAMPLE_COUNT, &f );
+
+    const long trace0 = 0;
+    const int samplecount = f;
+    const int elemsize = sizeof( float );
+    int trace_bsize = elemsize * samplecount;
+
+    int tracecount;
+    err = segy_traces( fp, &tracecount, trace0, trace_bsize );
+    switch( err ) {
+        case SEGY_OK: break;
+
+        case SEGY_FSEEK_ERROR:
+            return IOErrno();
+
+        case SEGY_INVALID_ARGS:
+            return RuntimeError( "unable to count traces, "
+                                 "no data traces past headers" );
+
+        case SEGY_TRACE_SIZE_MISMATCH:
+            return RuntimeError( "trace count inconsistent with file size, "
+                                 "trace lengths possibly of non-uniform" );
+
+        default:
+            return Error( err );
+    }
+
+    self->trace0 = trace0;
+    self->trace_bsize = trace_bsize;
+    self->format = SEGY_IEEE_FLOAT_4_BYTE;
+    self->elemsize = elemsize;
+    self->samplecount = samplecount;
     self->tracecount = tracecount;
 
     Py_INCREF( self );
@@ -1216,6 +1324,8 @@ PyMethodDef methods [] = {
     { "segyopen", (PyCFunction) fd::segyopen, METH_NOARGS, "Open file." },
     { "segymake", (PyCFunction) fd::segycreate,
       METH_VARARGS | METH_KEYWORDS, "Create file." },
+
+    { "suopen", (PyCFunction) fd::suopen, METH_VARARGS, "Open SU file." },
 
     { "close", (PyCFunction) fd::close, METH_VARARGS, "Close file." },
     { "flush", (PyCFunction) fd::flush, METH_VARARGS, "Flush file." },

@@ -1,9 +1,9 @@
 # segyio #
 
-[![Travis](https://img.shields.io/travis/Statoil/segyio/master.svg?label=travis)](https://travis-ci.org/Statoil/segyio)
+[![Travis](https://img.shields.io/travis/equinor/segyio/master.svg?label=travis)](https://travis-ci.org/equinor/segyio)
 [![Appveyor](https://ci.appveyor.com/api/projects/status/2i5cr8ui2t9qbxk9?svg=true)](https://ci.appveyor.com/project/statoil-travis/segyio)
-[![PyPI Updates](https://pyup.io/repos/github/Statoil/segyio/shield.svg)](https://pyup.io/repos/github/Statoil/segyio/)
-[![Python 3](https://pyup.io/repos/github/Statoil/segyio/python-3-shield.svg)](https://pyup.io/repos/github/Statoil/segyio/)
+[![PyPI Updates](https://pyup.io/repos/github/equinor/segyio/shield.svg)](https://pyup.io/repos/github/equinor/segyio/)
+[![Python 3](https://pyup.io/repos/github/equinor/segyio/python-3-shield.svg)](https://pyup.io/repos/github/equinor/segyio/)
 
 [readthedocs](https://segyio.readthedocs.io/)
 
@@ -27,11 +27,11 @@
 
 ## Introduction ##
 
-Segyio is a small LGPL licensed C library for easy interaction with SEG-Y
-formatted seismic data, with language bindings for Python and Matlab. Segyio is
-an attempt to create an easy-to-use, embeddable, community-oriented library for
-seismic applications. Features are added as they are needed; suggestions and
-contributions of all kinds are very welcome.
+Segyio is a small LGPL licensed C library for easy interaction with SEG-Y and
+Seismic Unix formatted seismic data, with language bindings for Python and
+Matlab. Segyio is an attempt to create an easy-to-use, embeddable,
+community-oriented library for seismic applications. Features are added as they
+are needed; suggestions and contributions of all kinds are very welcome.
 
 To catch up on the latest development and features, see the
 [changelog](changelog.md). To write future proof code, consult the planned
@@ -39,24 +39,26 @@ To catch up on the latest development and features, see the
 
 ## Feature summary ##
 
- * A low-level C interface with few assumptions; easy to bind to other
-   languages
- * Read and write binary and textual headers
- * Read and write traces and trace headers
- * Simple, powerful, and native-feeling Python interface with numpy
-   integration
- * xarray integration with netcdf_segy
- * Some simple applications with unix philosophy
+  * A low-level C interface with few assumptions; easy to bind to other
+    languages
+  * Read and write binary and textual headers
+  * Read and write traces and trace headers
+  * Simple, powerful, and native-feeling Python interface with numpy
+    integration
+  * Read and write seismic unix files
+  * xarray integration with netcdf_segy
+  * Some simple applications with unix philosophy
 
 ## Getting started ##
 
 When segyio is built and installed, you're ready to start programming! Check
-out the [tutorial](#tutorial), [examples](#examples), and the [example
-programs](python/examples). For a technical reference with examples and small
-recipes, [read the docs](https://segyio.readthedocs.io/) or start your
-favourite Python interpreter and type `help(segyio)` to get started - it is
-written with pydoc and should integrate well with IDLE, pycharm and other
-Python tools.
+out the [tutorial](#tutorial), [examples](#examples), [example
+programs](python/examples), and [example
+notebooks](https://github.com/equinor/segyio-notebooks). For a technical
+reference with examples and small recipes, [read the
+docs](https://segyio.readthedocs.io/). API docs are also available with pydoc -
+start your favourite Python interpreter and type `help(segyio)`, which should
+integrate well with IDLE, pycharm and other Python tools.
 
 ### Quick start ###
 ```python
@@ -77,10 +79,9 @@ A copy of segyio is available both as pre-built binaries and source code:
     * `apt install python3-segyio`
 * Wheels for Python from [PyPI](https://pypi.python.org/pypi/segyio/)
     * `pip install segyio`
-* Source code from [github](https://github.com/statoil/segyio)
+* Source code from [github](https://github.com/equinor/segyio)
     * `git clone https://github.com/statoil/segyio`
-* Source code in [tarballs](https://github.com/Statoil/segyio/releases)
-
+* Source code in [tarballs](https://github.com/equinor/segyio/releases)
 
 ### Build segyio ###
 
@@ -100,10 +101,10 @@ To build segyio you need:
 To build and install segyio, perform the following actions in your console:
 
 ```bash
-git clone https://github.com/Statoil/segyio
+git clone https://github.com/equinor/segyio
 mkdir segyio/build
 cd segyio/build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
 make
 make install
 ```
@@ -198,7 +199,7 @@ If the file is opened *unstructured*, all the line properties will will be
 
 ### Modes ###
 
-In segyio, data is retrived and written through so-called *modes*. Modes are
+In segyio, data is retrieved and written through so-called *modes*. Modes are
 abstract arrays, or addressing schemes, and change what names and indices mean.
 All modes are properties on the file handle object, support the `len` function,
 and reads and writes are done through `f.mode[]`. Writes are done with
@@ -226,7 +227,7 @@ are available:
 * `header`
 
     With addressing behaviour similar to `trace`, accessing items yield header
-    objects instead of numpy `ndarray`s. Headers are dict like objects, where
+    objects instead of numpy `ndarray`s. Headers are dict-like objects, where
     keys are integers, seismic unix-style keys (in segyio.su module) and segyio
     enums (segyio.TraceField).
 
@@ -318,7 +319,7 @@ More examples and recipes can be found in the docstrings `help(segyio)` and the
 
 ## Project goals ##
 
-Segyio does necessarily attempt to be the end-all of SEG-Y interactions;
+Segyio does not necessarily attempt to be the end-all of SEG-Y interactions;
 rather, we aim to lower the barrier to interacting with SEG-Y files for
 embedding, new applications or free-standing programs.
 
@@ -327,27 +328,41 @@ standard compliant) formatted files out there. Some assumptions are made, such
 as:
 
  * All traces in a file are assumed to be of the same size
- * All samples are 4-byte floats
 
 Currently, segyio supports:
  * Post-stack 3D volumes, sorted with respect to two header words (generally
    INLINE and CROSSLINE)
  * Pre-stack 4D volumes, sorted with respect to three header words (generally
    INLINE, CROSSLINE, and OFFSET)
- * Unstructured data
+ * Unstructured data, i.e. a collection of traces
+ * Most numerical formats (including IEEE 4- and 8-byte float, IBM float, 2-
+   and 4-byte integers)
 
 The writing functionality in segyio is largely meant to *modify* or adapt
 files. A file created from scratch is not necessarily a to-spec SEG-Y file, as
 we only necessarily write the header fields segyio needs to make sense of the
 geometry. It is still highly recommended that SEG-Y files are maintained and
-written according to specification, but segyio does not enforce this.
+written according to specification, but segyio **does not** enforce this.
+
+
+### SEG-Y Revisions ###
+
+Segyio can handle a lot of files that are SEG-Y-like, i.e. segyio handles files
+that don't strictly conform to the SEG-Y standard. Segyio also does not
+discriminate between the revisions, but instead tries to use information
+available in the file. For an *actual* standard's reference, please see the
+publications by SEG:
+
+- [SEG-Y 0 (1975)](https://seg.org/Portals/0/SEG/News%20and%20Resources/Technical%20Standards/seg_y_rev0.pdf)
+- [SEG-Y 1 (2002)](https://seg.org/Portals/0/SEG/News%20and%20Resources/Technical%20Standards/seg_y_rev1.pdf)
+- [SEG-Y 2 (2017)](https://seg.org/Portals/0/SEG/News%20and%20Resources/Technical%20Standards/seg_y_rev2_0-mar2017.pdf)
 
 ## Contributing ##
 
 We welcome all kinds of contributions, including code, bug reports, issues,
 feature requests, and documentation. The preferred way of submitting a
 contribution is to either make an
-[issue](https://github.com/Statoil/segyio/issues) on github or by forking the
+[issue](https://github.com/equinor/segyio/issues) on github or by forking the
 project on github and making a pull request.
 
 ## xarray integration ##
@@ -371,6 +386,20 @@ python examples/make-ps-file.py small-ps.sgy 10 1 5 1 4 1 3
 python examples/make-rotated-copies.py small.sgy
 ```
 
+The small-lsb.sgy file was created by running the flip-endianness program. This
+program is included in the segyio source tree, but not a part of the package,
+and not intended for distribution and installation, only for reproducing test
+files.
+
+The seismic unix file small.su and small-lsb.su were created by the following
+commands:
+
+```bash
+segyread tape=small.sgy ns=50 remap=tracr,cdp byte=189l,193l conv=1 format=1 \
+         > small-lsb.su
+suswapbytes < small.su > small-lsb.su
+```
+
 If you have have small data files with a free license, feel free to submit it
 to the project!
 
@@ -390,7 +419,7 @@ Open segy file and inspect it:
 
 ```python
 filename = 'name_of_your_file.sgy'
-with segyio.open(filename, "r") as segyfile:
+with segyio.open(filename) as segyfile:
 
     # Memory map file for faster reading (especially if file is big...)
     segyfile.mmap()
@@ -427,7 +456,7 @@ Read pre-stack data cube contained in segy file:
 
 ```python
 filename = 'name_of_your_prestack_file.sgy'
-with segyio.open(filename, "r") as segyfile:
+with segyio.open(filename) as segyfile:
 
     # Print offsets
     print(segyfile.offset)
@@ -449,7 +478,7 @@ Read and understand fairly 'unstructured' data (e.g., data sorted in common shot
 
 ```python
 filename = 'name_of_your_prestack_file.sgy'
-with segyio.open(filename, "r", ignore_geometry=True) as segyfile:
+with segyio.open(filename, ignore_geometry=True) as segyfile:
     segyfile.mmap()
 
     # Extract header word for all traces
@@ -482,49 +511,7 @@ with segyio.open(output_file, "r+") as src:
         src.iline[i] = 2 * src.iline[i]
 ```
 
-Make segy file from sctrach
-
-```python
-spec = segyio.spec()
-filename = 'name_of_your_file.sgy'
-
-spec = segyio.spec()
-file_out = 'test1.sgy'
-
-spec.sorting = 2
-spec.format = 1
-spec.samples = np.arange(30)
-spec.ilines = np.arange(10)
-spec.xlines = np.arange(20)
-
-with segyio.create(filename, spec) as f:
-
-    # write the line itself to the file and the inline number in all this line's headers
-    for ilno in spec.ilines:
-        f.iline[ilno] = np.zeros(
-            (len(spec.xlines), spec.samples), dtype=np.single) + ilno
-        f.header.iline[ilno] = {
-            segyio.TraceField.INLINE_3D: ilno,
-            segyio.TraceField.offset: 0
-        }
-
-    # then do the same for xlines
-    for xlno in spec.xlines:
-        f.header.xline[xlno] = {
-            segyio.TraceField.CROSSLINE_3D: xlno,
-            segyio.TraceField.TRACE_SAMPLE_INTERVAL: 4000
-        }
-```
-
-Visualize data using sibling tool [SegyViewer](https://github.com/Statoil/segyviewer):
-
-```python
-from PyQt4.QtGui import QApplication
-import segyviewlib
-qapp = QApplication([])
-l = segyviewlib.segyviewwidget.SegyViewWidget('filename.sgy')
-l.show()
-```
+[Make segy file from sctrach](python/examples/make-file.py)
 
 ### MATLAB ###
 
@@ -564,15 +551,28 @@ must configure your loader to also look in this prefix, either with a
 If you haven't set `CMAKE_INSTALL_PREFIX`, cmake will by default install to
 `/usr/local`, which your loader usually knows about. On Debian based systems,
 the library often gets installed to `/usr/local/lib`, which the loader may not
-know about. See [issue #239](https://github.com/Statoil/segyio/issues/239).
+know about. See [issue #239](https://github.com/equinor/segyio/issues/239).
 
 #### Possible solutions
 
 * Configure the loader (`sudo ldconfig` often does the trick)
 * Install with a different, known prefix, e.g. `-DCMAKE_INSTALL_LIBDIR=lib64`
 
+### RuntimeError: unable to find sorting
+
+This exception is raised when segyio tries to open the in strict mode, under
+the assumption that the file is a regular, sorted 3D volume. If the file is
+just a collection of traces in arbitrary order, this would fail.
+
+#### Possible solutions
+
+Segyio supports files that are just a collection of traces too, but has to be
+told that it's ok to do so. Pass `strict = False` or `ignore_geometry = True`
+to `segyio.open` to allow or force unstructured mode respectively. Please note
+that `f.iline` and similar features are now disabled and will raise errors.
+
 ## History ##
-Segyio was initially written and is maintained by [Statoil
-ASA](http://www.statoil.com/) as a free, simple, easy-to-use way of interacting
+Segyio was initially written and is maintained by [Equinor
+ASA](http://www.equinor.com/) as a free, simple, easy-to-use way of interacting
 with seismic data that can be tailored to our needs, and as contribution to the
 free software community.

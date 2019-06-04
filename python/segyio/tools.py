@@ -1,4 +1,7 @@
 import segyio
+from . import TraceSortingFormat
+from . import SegySampleFormat
+
 import numpy as np
 import textwrap
 
@@ -337,6 +340,7 @@ def metadata(f):
     spec.tracecount = f.tracecount
 
     spec.ext_headers = f.ext_headers
+    spec.endian = f.endian
 
     return spec
 
@@ -402,3 +406,320 @@ def resample(f, rate = None, delay = None, micro = False,
     f._samples = (np.arange(len(f.samples)) * rate) + t0
 
     return f
+
+
+def from_array(filename, data, iline=189,
+                               xline=193,
+                               format=SegySampleFormat.IBM_FLOAT_4_BYTE,
+                               dt=4000,
+                               delrt=0):
+    """ Create a new SEGY file from an n-dimentional array. Create a structured
+    SEGY file with defaulted headers from a 2-, 3- or 4-dimensional array.
+    ilines, xlines, offsets and samples are inferred from the size of the
+    array. Please refer to the documentation for functions from_array2D,
+    from_array3D and from_array4D to see how the arrays are interpreted.
+
+    Structure-defining fields in the binary header and in the traceheaders are
+    set accordingly. Such fields include, but are not limited to iline, xline
+    and offset. The file also contains a defaulted textual header.
+
+    Parameters
+    ----------
+    filename : string-like
+        Path to new file
+    data : 2-,3- or 4-dimensional array-like
+    iline : int or segyio.TraceField
+        Inline number field in the trace headers. Defaults to 189 as per the
+        SEG-Y rev1 specification
+    xline : int or segyio.TraceField
+        Crossline number field in the trace headers. Defaults to 193 as per the
+        SEG-Y rev1 specification
+    format : int or segyio.SegySampleFormat
+        Sample format field in the trace header. Defaults to IBM float 4 byte
+    dt : int-like
+        sample interval
+    delrt : int-like
+
+    Notes
+    -----
+    .. versionadded:: 1.8
+
+    Examples
+    --------
+    Create a file from a 3D array, open it and read an iline:
+
+    >>> segyio.tools.from_array(path, array3d)
+    >>> segyio.open(path, mode) as f:
+    ...     iline = f.iline[0]
+    ...
+    """
+
+    dt = int(dt)
+    delrt = int(delrt)
+
+    data = np.asarray(data)
+    dimensions = len(data.shape)
+
+    if dimensions not in range(2, 5):
+        problem = "Expected 2, 3, or 4 dimensions, {} was given".format(dimensions)
+        raise ValueError(problem)
+
+    spec = segyio.spec()
+    spec.iline   = iline
+    spec.xline   = xline
+    spec.format  = format
+    spec.sorting = TraceSortingFormat.INLINE_SORTING
+
+    if dimensions == 2:
+        spec.ilines  = [1]
+        spec.xlines  = list(range(1, np.size(data,0) + 1))
+        spec.samples = list(range(np.size(data,1)))
+        spec.tracecount = np.size(data, 1)
+
+    if dimensions == 3:
+        spec.ilines  = list(range(1, np.size(data, 0) + 1))
+        spec.xlines  = list(range(1, np.size(data, 1) + 1))
+        spec.samples = list(range(np.size(data, 2)))
+
+    if dimensions == 4:
+        spec.ilines  = list(range(1, np.size(data, 0) + 1))
+        spec.xlines  = list(range(1, np.size(data, 1) + 1))
+        spec.offsets = list(range(1, np.size(data, 2)+ 1))
+        spec.samples = list(range(np.size(data,3)))
+
+    samplecount = len(spec.samples)
+
+    with segyio.create(filename, spec) as f:
+        tr = 0
+        for ilno, il in enumerate(spec.ilines):
+            for xlno, xl in enumerate(spec.xlines):
+                for offno, off in enumerate(spec.offsets):
+                    f.header[tr] = {
+                        segyio.su.tracf  : tr,
+                        segyio.su.cdpt   : tr,
+                        segyio.su.offset : off,
+                        segyio.su.ns     : samplecount,
+                        segyio.su.dt     : dt,
+                        segyio.su.delrt  : delrt,
+                        segyio.su.iline  : il,
+                        segyio.su.xline  : xl
+                    }
+                    if dimensions == 2: f.trace[tr] = data[tr, :]
+                    if dimensions == 3: f.trace[tr] = data[ilno, xlno, :]
+                    if dimensions == 4: f.trace[tr] = data[ilno, xlno, offno, :]
+                    tr += 1
+
+        f.bin.update(
+            tsort=TraceSortingFormat.INLINE_SORTING,
+            hdt=dt,
+            dto=dt
+        )
+
+
+def from_array2D(filename, data, iline=189,
+                                 xline=193,
+                                 format=SegySampleFormat.IBM_FLOAT_4_BYTE,
+                                 dt=4000,
+                                 delrt=0):
+    """ Create a new SEGY file from a 2D array
+    Create an structured SEGY file with defaulted headers from a 2-dimensional
+    array. The file is inline-sorted and structured as a slice, i.e. it has one
+    iline and the xlinecount equals the tracecount. The tracecount and
+    samplecount are inferred from the size of the array. Structure-defining
+    fields in the binary header and in the traceheaders are set accordingly.
+    Such fields include, but are not limited to iline, xline and offset. The
+    file also contains a defaulted textual header.
+
+    The 2 dimensional array is interpreted as::
+
+                       samples
+                 --------------------
+        trace 0 | s0 | s1 | ... | sn |
+                 --------------------
+        trace 1 | s0 | s1 | ... | sn |
+                 --------------------
+                          .
+                          .
+                 --------------------
+        trace n | s0 | s1 | ... | sn |
+                 --------------------
+
+    traces =  [0, len(axis(0)]
+    samples = [0, len(axis(1)]
+
+    Parameters
+    ----------
+    filename : string-like
+        Path to new file
+    data : 2-dimensional array-like
+    iline : int or segyio.TraceField
+        Inline number field in the trace headers. Defaults to 189 as per the
+        SEG-Y rev1 specification
+    xline : int or segyio.TraceField
+        Crossline number field in the trace headers. Defaults to 193 as per the
+        SEG-Y rev1 specification
+    format : int or segyio.SegySampleFormat
+        Sample format field in the trace header. Defaults to IBM float 4 byte
+    dt : int-like
+        sample interval
+    delrt : int-like
+
+    Notes
+    -----
+    .. versionadded:: 1.8
+
+    Examples
+    --------
+    Create a file from a 2D array, open it and read a trace:
+
+    >>> segyio.tools.from_array2D(path, array2d)
+    >>> segyio.open(path, mode, strict=False) as f:
+    ...     tr = f.trace[0]
+    """
+
+    data = np.asarray(data)
+    dimensions = len(data.shape)
+
+    if dimensions != 2:
+        problem = "Expected 2 dimensions, {} was given".format(dimensions)
+        raise ValueError(problem)
+
+    from_array(filename, data, iline=iline, xline=xline, format=format,
+                                                         dt=dt,
+                                                         delrt=delrt)
+
+
+def from_array3D(filename, data, iline=189,
+                                 xline=193,
+                                 format=SegySampleFormat.IBM_FLOAT_4_BYTE,
+                                 dt=4000,
+                                 delrt=0):
+    """ Create a new SEGY file from a 3D array
+    Create an structured SEGY file with defaulted headers from a 3-dimensional
+    array. The file is inline-sorted. ilines, xlines and samples are inferred
+    from the array. Structure-defining fields in the binary header and
+    in the traceheaders are set accordingly. Such fields include, but are not
+    limited to iline, xline and offset. The file also contains a defaulted
+    textual header.
+
+    The 3-dimensional array is interpreted as::
+
+             xl0   xl1   xl2
+            -----------------
+         / | tr0 | tr1 | tr2 | il0
+           -----------------
+       | / | tr3 | tr4 | tr5 | il1
+            -----------------
+       | / | tr6 | tr7 | tr8 | il2
+            -----------------
+       | /      /     /     / n-samples
+         ------------------
+
+    ilines =  [1, len(axis(0) + 1]
+    xlines =  [1, len(axis(1) + 1]
+    samples = [0, len(axis(2)]
+
+    Parameters
+    ----------
+    filename : string-like
+        Path to new file
+    data : 3-dimensional array-like
+    iline : int or segyio.TraceField
+        Inline number field in the trace headers. Defaults to 189 as per the
+        SEG-Y rev1 specification
+    xline : int or segyio.TraceField
+        Crossline number field in the trace headers. Defaults to 193 as per the
+        SEG-Y rev1 specification
+    format : int or segyio.SegySampleFormat
+        Sample format field in the trace header. Defaults to IBM float 4 byte
+    dt : int-like
+        sample interval
+    delrt : int-like
+
+    Notes
+    -----
+    .. versionadded:: 1.8
+
+    Examples
+    --------
+    Create a file from a 3D array, open it and read an iline:
+
+    >>> segyio.tools.from_array3D(path, array3d)
+    >>> segyio.open(path, mode) as f:
+    ...     iline = f.iline[0]
+    ...
+    """
+
+    data = np.asarray(data)
+    dimensions = len(data.shape)
+
+    if dimensions != 3:
+        problem = "Expected 3 dimensions, {} was given".format(dimensions)
+        raise ValueError(problem)
+
+    from_array(filename, data, iline=iline, xline=xline, format=format,
+                                                         dt=dt,
+                                                         delrt=delrt)
+
+
+def from_array4D(filename, data, iline=189,
+                                  xline=193,
+                                  format=SegySampleFormat.IBM_FLOAT_4_BYTE,
+                                  dt=4000,
+                                  delrt=0):
+    """ Create a new SEGY file from a 4D array
+    Create an structured SEGY file with defaulted headers from a 4-dimensional
+    array. The file is inline-sorted. ilines, xlines, offsets and samples are
+    inferred from the array. Structure-defining fields in the binary header and
+    in the traceheaders are set accordingly. Such fields include, but are not
+    limited to iline, xline and offset. The file also contains a defaulted
+    textual header.
+
+    The 4D array is interpreted:
+
+    ilines =  [1, len(axis(0) + 1]
+    xlines =  [1, len(axis(1) + 1]
+    offsets = [1, len(axis(2) + 1]
+    samples = [0, len(axis(3)]
+
+    Parameters
+    ----------
+    filename : string-like
+        Path to new file
+    data : 4-dimensional array-like
+    iline : int or segyio.TraceField
+        Inline number field in the trace headers. Defaults to 189 as per the
+        SEG-Y rev1 specification
+    xline : int or segyio.TraceField
+        Crossline number field in the trace headers. Defaults to 193 as per the
+        SEG-Y rev1 specification
+    format : int or segyio.SegySampleFormat
+        Sample format field in the trace header. Defaults to IBM float 4 byte
+    dt : int-like
+        sample interval
+    delrt : int-like
+
+    Notes
+    -----
+    .. versionadded:: 1.8
+
+    Examples
+    --------
+    Create a file from a 3D array, open it and read an iline:
+
+    >>> segyio.tools.create_from_array4D(path, array4d)
+    >>> segyio.open(path, mode) as f:
+    ...     iline = f.iline[0]
+    ...
+    """
+
+    data = np.asarray(data)
+    dimensions = len(data.shape)
+
+    if dimensions != 4:
+        problem = "Expected 4 dimensions, {} was given".format(dimensions)
+        raise ValueError(problem)
+
+    from_array(filename, data, iline=iline, xline=xline, format=format,
+                                                         dt=dt,
+                                                         delrt=delrt)

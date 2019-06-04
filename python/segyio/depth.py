@@ -1,8 +1,6 @@
 import numpy as np
 try: from future_builtins import zip
 except ImportError: pass
-
-from .tracesortingformat import TraceSortingFormat as Sorting
 from .trace import Sequence
 from .utils import castarray
 
@@ -59,6 +57,10 @@ class Depth(Sequence):
         inline sorted file with 10 inlines and 5 crosslines has the shape
         (10,5). If the file is unsorted, the array shape == tracecount.
 
+        Be aware that this interface uses zero-based indices (like traces) and
+        *not keys* (like ilines), so you can *not* use the values file.samples
+        as indices.
+
         Parameters
         ----------
         i : int or slice
@@ -112,11 +114,17 @@ class Depth(Sequence):
             return self.filehandle.getdepth(i, buf.size, self.offsets, buf)
 
         except TypeError:
+            try:
+                indices = i.indices(len(self))
+            except AttributeError:
+                msg = 'depth indices must be integers or slices, not {}'
+                raise TypeError(msg.format(type(i).__name__))
+
             def gen():
                 x = np.empty(self.shape, dtype=self.dtype)
                 y = np.copy(x)
 
-                for j in range(*i.indices(len(self))):
+                for j in range(*indices):
                     self.filehandle.getdepth(j, x.size, self.offsets, x)
                     x, y = y, x
                     yield y
